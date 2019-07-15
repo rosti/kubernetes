@@ -5,7 +5,7 @@ load(
     "go_binary",
     "go_library",
 )
-load("//vendor/k8s.io/client-go/pkg/version:def.bzl", "version_x_defs")
+load("//cmd/kubeadm/version:def.bzl", "version_x_defs")
 
 go_binary(
     name = "kubeadm",
@@ -34,6 +34,7 @@ filegroup(
         ":package-srcs",
         "//cmd/kubeadm/app:all-srcs",
         "//cmd/kubeadm/test:all-srcs",
+        "//cmd/kubeadm/version:all-srcs",
     ],
     tags = ["automanaged"],
 )
