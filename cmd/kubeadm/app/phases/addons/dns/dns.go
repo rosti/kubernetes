@@ -228,8 +228,8 @@ func createCoreDNSAddon(deploymentBytes, serviceBytes, configBytes []byte, clien
 		return errors.Wrapf(err, "%s ConfigMap", unableToDecodeCoreDNS)
 	}
 
-	// Create the ConfigMap for CoreDNS or retain it in case it already exists
-	if err := apiclient.CreateOrRetainConfigMap(client, coreDNSConfigMap, kubeadmconstants.CoreDNSConfigMap); err != nil {
+	// Create the ConfigMap for CoreDNS or update it in case it already exists
+	if err := apiclient.CreateOrUpdateConfigMap(client, coreDNSConfigMap); err != nil {
 		return err
 	}
 
