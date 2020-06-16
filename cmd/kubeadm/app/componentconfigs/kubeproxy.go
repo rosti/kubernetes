@@ -50,8 +50,8 @@ var kubeProxyHandler = handler{
 	fromCluster: kubeProxyConfigFromCluster,
 }
 
-func kubeProxyConfigFromCluster(h *handler, clientset clientset.Interface, _ *kubeadmapi.ClusterConfiguration) (kubeadmapi.ComponentConfig, error) {
-	return h.fromConfigMap(clientset, kubeadmconstants.KubeProxyConfigMap, kubeadmconstants.KubeProxyConfigMapKey, false)
+func kubeProxyConfigFromCluster(clientset clientset.Interface, _ *kubeadmapi.ClusterConfiguration) (kubeadmapi.DocumentMap, bool, error) {
+	return documentMapFromConfigMap(clientset, kubeadmconstants.KubeProxyConfigMap, kubeadmconstants.KubeProxyConfigMapKey, false)
 }
 
 // kubeProxyConfig implements the kubeadmapi.ComponentConfig interface for kube-proxy

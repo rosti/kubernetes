@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "alpha.go",
         "certs.go",
+        "config.go",
         "kubeconfig.go",
         "kubelet.go",
         "selfhosting.go",
@@ -19,6 +20,7 @@ go_library(
         "//cmd/kubeadm/app/cmd/options:go_default_library",
         "//cmd/kubeadm/app/cmd/phases:go_default_library",
         "//cmd/kubeadm/app/cmd/util:go_default_library",
+        "//cmd/kubeadm/app/componentconfigs:go_default_library",
         "//cmd/kubeadm/app/constants:go_default_library",
         "//cmd/kubeadm/app/features:go_default_library",
         "//cmd/kubeadm/app/phases/certs/renewal:go_default_library",
@@ -29,6 +31,7 @@ go_library(
         "//cmd/kubeadm/app/util/apiclient:go_default_library",
         "//cmd/kubeadm/app/util/config:go_default_library",
         "//cmd/kubeadm/app/util/kubeconfig:go_default_library",
+        "//staging/src/k8s.io/apimachinery/pkg/runtime/schema:go_default_library",
         "//staging/src/k8s.io/apimachinery/pkg/util/duration:go_default_library",
         "//staging/src/k8s.io/apimachinery/pkg/util/version:go_default_library",
         "//vendor/github.com/lithammer/dedent:go_default_library",

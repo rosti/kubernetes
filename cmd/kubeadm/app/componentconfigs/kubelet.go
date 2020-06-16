@@ -72,15 +72,15 @@ var kubeletHandler = handler{
 	fromCluster: kubeletConfigFromCluster,
 }
 
-func kubeletConfigFromCluster(h *handler, clientset clientset.Interface, clusterCfg *kubeadmapi.ClusterConfiguration) (kubeadmapi.ComponentConfig, error) {
+func kubeletConfigFromCluster(clientset clientset.Interface, clusterCfg *kubeadmapi.ClusterConfiguration) (kubeadmapi.DocumentMap, bool, error) {
 	// Read the ConfigMap from the cluster based on what version the kubelet is
 	k8sVersion, err := version.ParseGeneric(clusterCfg.KubernetesVersion)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	configMapName := constants.GetKubeletConfigMapName(k8sVersion)
-	return h.fromConfigMap(clientset, configMapName, constants.KubeletBaseConfigurationConfigMapKey, true)
+	return documentMapFromConfigMap(clientset, configMapName, constants.KubeletBaseConfigurationConfigMapKey, true)
 }
 
 // kubeletConfig implements the kubeadmapi.ComponentConfig interface for kubelet

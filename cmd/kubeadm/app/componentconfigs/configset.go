@@ -48,8 +48,8 @@ type handler struct {
 	CreateEmpty func() kubeadmapi.ComponentConfig
 
 	// fromCluster should load the component config from a config map on the cluster.
-	// Don't use this directly! Use FromCluster instead!
-	fromCluster func(*handler, clientset.Interface, *kubeadmapi.ClusterConfiguration) (kubeadmapi.ComponentConfig, error)
+	// Don't use this directly outside of this module! Use FromCluster instead!
+	fromCluster func(clientset.Interface, *kubeadmapi.ClusterConfiguration) (kubeadmapi.DocumentMap, bool, error)
 }
 
 // FromDocumentMap looks in the document map for documents with this handler's group.
@@ -70,51 +70,53 @@ func (h *handler) FromDocumentMap(docmap kubeadmapi.DocumentMap) (kubeadmapi.Com
 	return nil, nil
 }
 
-// fromConfigMap is an utility function, which will load the value of a key of a config map and use h.FromDocumentMap() to perform the parsing
-// This is an utility func. Used by the component config support implementations. Don't use it outside of that context.
-func (h *handler) fromConfigMap(client clientset.Interface, cmName, cmKey string, mustExist bool) (kubeadmapi.ComponentConfig, error) {
+func documentMapFromConfigMap(client clientset.Interface, cmName, cmKey string, mustExist bool) (kubeadmapi.DocumentMap, bool, error) {
 	configMap, err := apiclient.GetConfigMapWithRetry(client, metav1.NamespaceSystem, cmName)
 	if err != nil {
 		if !mustExist && (apierrors.IsNotFound(err) || apierrors.IsForbidden(err)) {
-			klog.Warningf("Warning: No %s config is loaded. Continuing without it: %v", h.GroupVersion, err)
-			return nil, nil
+			return nil, false, nil
 		}
-		return nil, err
+		return nil, false, err
 	}
 
 	configData, ok := configMap.Data[cmKey]
 	if !ok {
-		return nil, errors.Errorf("unexpected error when reading %s ConfigMap: %s key value pair missing", cmName, cmKey)
-	}
-
-	gvkmap, err := kubeadmutil.SplitYAMLDocuments([]byte(configData))
-	if err != nil {
-		return nil, err
+		return nil, false, errors.Errorf("unexpected error when reading %s ConfigMap: %s key value pair missing", cmName, cmKey)
 	}
 
 	// If the checksum comes up neatly we assume the config was generated
 	generatedConfig := VerifyConfigMapSignature(configMap)
 
-	componentCfg, err := h.FromDocumentMap(gvkmap)
+	docmap, err := kubeadmutil.SplitYAMLDocuments([]byte(configData))
+	return docmap, generatedConfig, err
+}
+
+// FromCluster loads a component from a config map in the cluster
+func (h *handler) FromCluster(clientset clientset.Interface, clusterCfg *kubeadmapi.ClusterConfiguration) (kubeadmapi.ComponentConfig, error) {
+	docmap, kubeadmGenerated, err := h.fromCluster(clientset, clusterCfg)
+	if err != nil {
+		return nil, err
+	}
+	if docmap == nil {
+		klog.Warningf("Warning: No %s config is loaded. Continuing without it.", h.GroupVersion)
+		return nil, nil
+	}
+
+	componentCfg, err := h.FromDocumentMap(docmap)
 	if err != nil {
 		// If the config was generated and we get UnsupportedConfigVersionError, we skip loading it.
 		// This will force us to use the generated default current version (effectively regenerating the config with the current version).
-		if _, ok := err.(*UnsupportedConfigVersionError); ok && generatedConfig {
+		if _, ok := err.(*UnsupportedConfigVersionError); ok && kubeadmGenerated {
 			return nil, nil
 		}
 		return nil, err
 	}
 
 	if componentCfg != nil {
-		componentCfg.SetUserSupplied(!generatedConfig)
+		componentCfg.SetUserSupplied(!kubeadmGenerated)
 	}
 
 	return componentCfg, nil
-}
-
-// FromCluster loads a component from a config map in the cluster
-func (h *handler) FromCluster(clientset clientset.Interface, clusterCfg *kubeadmapi.ClusterConfiguration) (kubeadmapi.ComponentConfig, error) {
-	return h.fromCluster(h, clientset, clusterCfg)
 }
 
 // known holds the known component config handlers. Add new component configs here.
@@ -331,6 +333,32 @@ func GetVersionStates(clusterCfg *kubeadmapi.ClusterConfiguration, client client
 				Group:            group,
 				PreferredVersion: handler.GroupVersion.Version,
 			})
+		}
+	}
+
+	return results, nil
+}
+
+func FetchUnsupportedConfigsFromCluster(clusterCfg *kubeadmapi.ClusterConfiguration, client clientset.Interface) (kubeadmapi.DocumentMap, error) {
+	results := kubeadmapi.DocumentMap{}
+
+	for _, h := range known {
+		docmap, kubeadmGenerated, err := h.fromCluster(client, clusterCfg)
+		if err != nil {
+			return nil, err
+		}
+		if docmap == nil || kubeadmGenerated {
+			continue
+		}
+
+		for gvk, yaml := range docmap {
+			if gvk.Group != h.GroupVersion.Group {
+				continue
+			}
+
+			if gvk.Version != h.GroupVersion.Version {
+				results[gvk] = yaml
+			}
 		}
 	}
 

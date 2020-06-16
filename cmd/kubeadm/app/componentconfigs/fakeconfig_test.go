@@ -29,6 +29,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientset "k8s.io/client-go/kubernetes"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 	kubeadmapi "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm"
@@ -72,8 +73,8 @@ var clusterConfigHandler = handler{
 	fromCluster: clusterConfigFromCluster,
 }
 
-func clusterConfigFromCluster(h *handler, clientset clientset.Interface, _ *kubeadmapi.ClusterConfiguration) (kubeadmapi.ComponentConfig, error) {
-	return h.fromConfigMap(clientset, constants.KubeadmConfigConfigMap, constants.ClusterConfigurationConfigMapKey, true)
+func clusterConfigFromCluster(clientset clientset.Interface, _ *kubeadmapi.ClusterConfiguration) (kubeadmapi.DocumentMap, bool, error) {
+	return documentMapFromConfigMap(clientset, constants.KubeadmConfigConfigMap, constants.ClusterConfigurationConfigMapKey, true)
 }
 
 type clusterConfig struct {
@@ -715,6 +716,65 @@ func TestGetVersionStates(t *testing.T) {
 					t.Errorf("got %d, but expected only a single result: %v", len(got), got)
 				} else if got[0] != test.expected {
 					t.Errorf("unexpected result:\n\texpected: %v\n\tgot: %v", test.expected, got[0])
+				}
+			})
+		}
+	})
+}
+
+func TestFetchUnsupportedConfigsFromCluster(t *testing.T) {
+	fakeKnownContext(func() {
+		oldClusterConfigGVK := schema.GroupVersionKind{
+			Group:   kubeadmapi.GroupName,
+			Version: oldClusterConfigVersion,
+			Kind:    "ClusterConfiguration",
+		}
+
+		tests := []struct {
+			desc     string
+			obj      runtime.Object
+			expected kubeadmapi.DocumentMap
+		}{
+			{
+				desc: "current user supplied config is not returned",
+				obj:  testClusterConfigMap(currentBarClusterConfig, false),
+			},
+			{
+				desc: "current kubeadm generated config is not returned",
+				obj:  testClusterConfigMap(currentBarClusterConfig, true),
+			},
+			{
+				desc: "old kubeadm generated config is not returned",
+				obj:  testClusterConfigMap(oldBarClusterConfig, true),
+			},
+			{
+				desc: "old user supplied config is returned",
+				obj:  testClusterConfigMap(oldBarClusterConfig, false),
+				expected: kubeadmapi.DocumentMap{
+					oldClusterConfigGVK: []byte(dedent.Dedent(oldBarClusterConfig)),
+				},
+			},
+		}
+		for _, test := range tests {
+			t.Run(test.desc, func(t *testing.T) {
+				client := clientsetfake.NewSimpleClientset(test.obj)
+				got, err := FetchUnsupportedConfigsFromCluster(testClusterCfg(), client)
+				if err != nil {
+					t.Errorf("unexpected failure of FetchUnsupportedConfigsFromCluster: %v", err)
+					return
+				}
+
+				if len(got) != len(test.expected) {
+					t.Errorf("unexpected length of result:\n\texpected: %v\n\tgot: %v", test.expected, got)
+					return
+				}
+
+				for k, expectedYAML := range test.expected {
+					if gotYAML, ok := got[k]; !ok {
+						t.Errorf("missing GVK %q", k)
+					} else if string(expectedYAML) != string(gotYAML) {
+						t.Errorf("YAMLs are not matching:\n\texpected:\n%s\n\tgot:\n%s", string(expectedYAML), string(gotYAML))
+					}
 				}
 			})
 		}
